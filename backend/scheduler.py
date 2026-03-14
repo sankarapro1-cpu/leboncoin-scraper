@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db_context
 from models import SearchProfile, Listing, ScrapingRun
-from scraper import run_scrape
 from scoring import score_listing, update_market_data
 from alerts import send_alerts
 
@@ -63,7 +62,8 @@ async def run_scraping_cycle():
                     "location_radius_km": profile.location_radius_km,
                 }
 
-                # Lancer le scraping
+                # Lancer le scraping (import lazy pour éviter crash si playwright absent)
+                from scraper import run_scrape
                 raw_listings = await run_scrape(profile_dict)
                 run.listings_found = len(raw_listings)
                 logger.info(f"Profil '{profile.name}': {len(raw_listings)} annonces trouvées")
