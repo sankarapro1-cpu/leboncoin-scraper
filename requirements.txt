@@ -1,0 +1,29 @@
+# Backend
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+jinja2==3.1.3
+python-multipart==0.0.9
+pydantic==2.6.3
+
+# Base de données
+sqlalchemy==2.0.28
+alembic==1.13.1
+
+# Scraping
+playwright==1.43.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+httpx==0.27.0
+
+# Planificateur
+APScheduler==3.10.4
+
+# Alertes
+# (email via smtplib natif, Telegram via httpx)
+
+# Configuration
+python-dotenv==1.0.1
+
+# Dev (optionnel)
+# pytest==8.1.1
+# pytest-asyncio==0.23.5

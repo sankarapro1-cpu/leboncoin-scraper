@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoDeal — Paramètres</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body x-data="settingsApp()" x-init="init()">
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">🚗</span>
+      <span class="logo-text">AutoDeal</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="nav-item"><span class="nav-icon">📊</span> Dashboard</a>
+      <a href="/" class="nav-item"><span class="nav-icon">📋</span> Annonces</a>
+      <a href="/" class="nav-item"><span class="nav-icon">⭐</span> Sauvegardées</a>
+      <a href="/settings" class="nav-item active"><span class="nav-icon">⚙️</span> Paramètres</a>
+    </nav>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>⚙️ Paramètres</h1>
+      <p class="subtitle">Gérez vos profils de recherche</p>
+    </div>
+
+    <!-- Liste des profils -->
+    <div class="section-header">
+      <h2>Profils de recherche</h2>
+      <button class="btn-primary" @click="openNewProfile()">+ Nouveau profil</button>
+    </div>
+
+    <div class="profiles-list">
+      <template x-for="profile in profiles" :key="profile.id">
+        <div class="profile-card">
+          <div class="profile-header">
+            <div class="profile-name">
+              <span class="active-dot" :class="{active: profile.is_active}"></span>
+              <strong x-text="profile.name"></strong>
+            </div>
+            <div class="profile-actions">
+              <button class="btn-icon" @click="toggleProfile(profile)" :title="profile.is_active ? 'Désactiver' : 'Activer'">
+                <span x-text="profile.is_active ? '⏸' : '▶'"></span>
+              </button>
+              <button class="btn-icon" @click="editProfile(profile)" title="Modifier">✏️</button>
+              <button class="btn-icon btn-danger" @click="deleteProfile(profile)" title="Supprimer">🗑️</button>
+            </div>
+          </div>
+          <div class="profile-summary">
+            <span x-show="profile.brand" x-text="'🚗 ' + profile.brand + (profile.model ? ' ' + profile.model : '')"></span>
+            <span x-show="profile.max_price" x-text="'💰 Max ' + formatPrice(profile.max_price)"></span>
+            <span x-show="profile.min_year" x-text="'📅 À partir de ' + profile.min_year"></span>
+            <span x-show="profile.max_km" x-text="'📍 Max ' + formatKm(profile.max_km)"></span>
+            <span x-show="profile.location_city" x-text="'🗺️ ' + profile.location_city + ' +' + profile.location_radius_km + 'km'"></span>
+          </div>
+        </div>
+      </template>
+
+      <div class="empty-state" x-show="profiles.length === 0">
+        <div class="empty-icon">🔍</div>
+        <p>Aucun profil de recherche.</p>
+        <p class="hint">Créez un profil pour démarrer le scraping automatique.</p>
+      </div>
+    </div>
+
+    <!-- Infos technique -->
+    <div class="section-header" style="margin-top: 40px;">
+      <h2>Informations techniques</h2>
+    </div>
+    <div class="info-box">
+      <div class="info-item">
+        <strong>Intervalle de scan</strong>
+        <span>Toutes les 15 minutes (configurable via .env)</span>
+      </div>
+      <div class="info-item">
+        <strong>Seuil d'alerte</strong>
+        <span>Score ≥ 70/100 (configurable via .env)</span>
+      </div>
+      <div class="info-item">
+        <strong>Annonces par cycle</strong>
+        <span>200 max (configurable via .env)</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal création/édition profil -->
+  <div class="modal-overlay" x-show="showProfileModal" @click.self="showProfileModal = false">
+    <div class="modal modal-large">
+      <button class="modal-close" @click="showProfileModal = false">✕</button>
+      <h2 x-text="editingProfile ? 'Modifier le profil' : 'Nouveau profil de recherche'"></h2>
+
+      <form @submit.prevent="saveProfile()">
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>Nom du profil *</label>
+            <input type="text" x-model="profileForm.name" required placeholder="Ex: Peugeot 308 Diesel" />
+          </div>
+
+          <div class="form-group">
+            <label>Marque</label>
+            <input type="text" x-model="profileForm.brand" placeholder="Renault, Peugeot..." />
+          </div>
+          <div class="form-group">
+            <label>Modèle</label>
+            <input type="text" x-model="profileForm.model" placeholder="Clio, 308..." />
+          </div>
+
+          <div class="form-group">
+            <label>Prix min (€)</label>
+            <input type="number" x-model.number="profileForm.min_price" placeholder="0" />
+          </div>
+          <div class="form-group">
+            <label>Prix max (€)</label>
+            <input type="number" x-model.number="profileForm.max_price" placeholder="20000" />
+          </div>
+
+          <div class="form-group">
+            <label>Année min</label>
+            <input type="number" x-model.number="profileForm.min_year" placeholder="2010" />
+          </div>
+          <div class="form-group">
+            <label>Année max</label>
+            <input type="number" x-model.number="profileForm.max_year" placeholder="2024" />
+          </div>
+
+          <div class="form-group">
+            <label>Km min</label>
+            <input type="number" x-model.number="profileForm.min_km" placeholder="0" />
+          </div>
+          <div class="form-group">
+            <label>Km max</label>
+            <input type="number" x-model.number="profileForm.max_km" placeholder="150000" />
+          </div>
+
+          <div class="form-group">
+            <label>Carburant</label>
+            <select x-model="profileForm.fuel_type">
+              <option value="">Tous</option>
+              <option value="essence">Essence</option>
+              <option value="diesel">Diesel</option>
+              <option value="hybride">Hybride</option>
+              <option value="electrique">Électrique</option>
+              <option value="gpl">GPL</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Transmission</label>
+            <select x-model="profileForm.transmission">
+              <option value="">Toutes</option>
+              <option value="manuelle">Manuelle</option>
+              <option value="automatique">Automatique</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Ville / Région</label>
+            <input type="text" x-model="profileForm.location_city" placeholder="Paris, Lyon..." />
+          </div>
+          <div class="form-group">
+            <label>Rayon (km)</label>
+            <input type="number" x-model.number="profileForm.location_radius_km" value="100" />
+          </div>
+
+          <div class="form-group">
+            <label>Nb propriétaires max</label>
+            <input type="number" x-model.number="profileForm.max_owners" placeholder="—" />
+          </div>
+
+          <div class="form-group">
+            <label>Mots-clés inclus</label>
+            <input type="text" x-model="profileForm.keywords"
+                   placeholder="bon état, révisé..." />
+          </div>
+          <div class="form-group">
+            <label>Mots-clés exclus</label>
+            <input type="text" x-model="profileForm.excluded_keywords"
+                   placeholder="accidenté, pour pièce..." />
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">
+            <span x-text="editingProfile ? 'Enregistrer' : 'Créer le profil'"></span>
+          </button>
+          <button type="button" class="btn-secondary" @click="showProfileModal = false">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-container">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div class="toast" :class="toast.type" x-text="toast.message"></div>
+    </template>
+  </div>
+
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

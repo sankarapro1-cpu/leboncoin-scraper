@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoDeal — Analyseur Leboncoin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body x-data="app()" x-init="init()">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">🚗</span>
+      <span class="logo-text">AutoDeal</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" @click.prevent="setTab('dashboard')">
+        <span class="nav-icon">📊</span> Dashboard
+      </a>
+      <a href="#" class="nav-item" @click.prevent="setTab('listings')">
+        <span class="nav-icon">📋</span> Annonces
+      </a>
+      <a href="#" class="nav-item" @click.prevent="setTab('saved')">
+        <span class="nav-icon">⭐</span> Sauvegardées
+      </a>
+      <a href="/settings" class="nav-item">
+        <span class="nav-icon">⚙️</span> Paramètres
+      </a>
+    </nav>
+
+    <!-- Statut scraping -->
+    <div class="scrape-status" :class="{'running': isScrapingRunning}">
+      <div class="scrape-dot"></div>
+      <span x-text="isScrapingRunning ? 'Scraping en cours...' : 'En attente'"></span>
+    </div>
+    <button class="btn-scrape" @click="triggerScrape()" :disabled="isScrapingRunning">
+      ▶ Lancer scan
+    </button>
+    <div class="next-run" x-show="nextRun">
+      Prochain scan : <span x-text="formatNextRun()"></span>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+
+    <!-- ══════════════ DASHBOARD ══════════════ -->
+    <section x-show="currentTab === 'dashboard'">
+      <div class="page-header">
+        <h1>Dashboard</h1>
+        <p class="subtitle">Vue d'ensemble de vos opportunités</p>
+      </div>
+
+      <!-- Cartes stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">📋</div>
+          <div class="stat-value" x-text="stats.total_listings ?? '—'"></div>
+          <div class="stat-label">Annonces totales</div>
+        </div>
+        <div class="stat-card highlight">
+          <div class="stat-icon">🔥</div>
+          <div class="stat-value" x-text="stats.good_deals ?? '—'"></div>
+          <div class="stat-label">Bonnes affaires (score ≥70)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🆕</div>
+          <div class="stat-value" x-text="stats.new_24h ?? '—'"></div>
+          <div class="stat-label">Nouvelles (24h)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">⭐</div>
+          <div class="stat-value" x-text="stats.total_saved ?? '—'"></div>
+          <div class="stat-label">Sauvegardées</div>
+        </div>
+      </div>
+
+      <!-- Dernier scan -->
+      <div class="last-scan-info" x-show="stats.last_scrape">
+        <span class="scrape-badge" :class="stats.last_scrape?.status">
+          <span x-text="stats.last_scrape?.status === 'success' ? '✓' : '!'"></span>
+        </span>
+        Dernier scan :
+        <strong x-text="formatDate(stats.last_scrape?.started_at)"></strong>
+        — <span x-text="stats.last_scrape?.listings_new + ' nouvelles annonces'"></span>
+      </div>
+
+      <!-- Top affaires -->
+      <div class="section-header">
+        <h2>🔥 Meilleures affaires</h2>
+      </div>
+
+      <div class="listings-grid" x-show="bestDeals.length > 0">
+        <template x-for="listing in bestDeals" :key="listing.id">
+          <div class="listing-card" @click="openListing(listing)">
+            <div class="listing-img-wrap">
+              <img :src="listing.thumbnail_url || '/static/no-image.svg'" :alt="listing.title"
+                   onerror="this.src='/static/no-image.svg'" />
+              <div class="score-badge" :class="scoreClass(listing.opportunity_score)"
+                   :title="'Score : ' + listing.opportunity_score + '/100'">
+                <span x-text="listing.opportunity_score"></span>
+              </div>
+              <button class="save-btn" @click.stop="toggleSave(listing)"
+                      :class="{saved: listing.is_saved}">
+                <span x-text="listing.is_saved ? '★' : '☆'"></span>
+              </button>
+            </div>
+            <div class="listing-body">
+              <div class="listing-title" x-text="listing.title"></div>
+              <div class="listing-price">
+                <span class="price-main" x-text="formatPrice(listing.price)"></span>
+                <span class="price-deviation"
+                      x-show="listing.price_deviation_pct"
+                      :class="listing.price_deviation_pct < 0 ? 'below-market' : 'above-market'"
+                      x-text="formatDeviation(listing.price_deviation_pct)">
+                </span>
+              </div>
+              <div class="listing-meta">
+                <span x-text="listing.year || '—'"></span>
+                <span class="sep">•</span>
+                <span x-text="formatKm(listing.mileage)"></span>
+                <span class="sep">•</span>
+                <span x-text="listing.city || '—'"></span>
+              </div>
+              <div class="listing-margin" x-show="listing.potential_margin">
+                💵 Marge est. :
+                <strong x-text="formatPrice(listing.potential_margin)"></strong>
+                (<span x-text="listing.potential_margin_pct?.toFixed(0) + '%'"></span>)
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="empty-state" x-show="bestDeals.length === 0 && !loading">
+        <div class="empty-icon">🔍</div>
+        <p>Aucune bonne affaire pour l'instant.</p>
+        <p class="hint">Lancez un scan ou configurez des profils de recherche.</p>
+      </div>
+    </section>
+
+    <!-- ══════════════ LISTINGS ══════════════ -->
+    <section x-show="currentTab === 'listings'">
+      <div class="page-header">
+        <h1>Annonces</h1>
+        <p class="subtitle" x-text="pagination.total + ' annonces trouvées'"></p>
+      </div>
+
+      <!-- Filtres -->
+      <div class="filters-bar">
+        <div class="filter-group">
+          <label>Score min</label>
+          <input type="number" x-model.number="filters.min_score" min="0" max="100"
+                 placeholder="0" @change="loadListings()" />
+        </div>
+        <div class="filter-group">
+          <label>Prix max (€)</label>
+          <input type="number" x-model.number="filters.max_price" placeholder="—"
+                 @change="loadListings()" />
+        </div>
+        <div class="filter-group">
+          <label>Année min</label>
+          <input type="number" x-model.number="filters.min_year" placeholder="—"
+                 @change="loadListings()" />
+        </div>
+        <div class="filter-group">
+          <label>Km max</label>
+          <input type="number" x-model.number="filters.max_km" placeholder="—"
+                 @change="loadListings()" />
+        </div>
+        <div class="filter-group">
+          <label>Marque</label>
+          <input type="text" x-model="filters.brand" placeholder="Renault..."
+                 @input.debounce.500ms="loadListings()" />
+        </div>
+        <div class="filter-group">
+          <label>Trier par</label>
+          <select x-model="filters.sort_by" @change="loadListings()">
+            <option value="score">Score</option>
+            <option value="date">Date</option>
+            <option value="price">Prix</option>
+            <option value="margin">Marge</option>
+          </select>
+        </div>
+        <button class="btn-reset" @click="resetFilters()">Réinitialiser</button>
+      </div>
+
+      <!-- Grille d'annonces -->
+      <div class="listings-grid">
+        <template x-for="listing in listings" :key="listing.id">
+          <div class="listing-card" @click="openListing(listing)">
+            <div class="listing-img-wrap">
+              <img :src="listing.thumbnail_url || '/static/no-image.svg'" :alt="listing.title"
+                   onerror="this.src='/static/no-image.svg'" />
+              <div class="score-badge" :class="scoreClass(listing.opportunity_score)">
+                <span x-text="listing.opportunity_score"></span>
+              </div>
+              <button class="save-btn" @click.stop="toggleSave(listing)"
+                      :class="{saved: listing.is_saved}">
+                <span x-text="listing.is_saved ? '★' : '☆'"></span>
+              </button>
+            </div>
+            <div class="listing-body">
+              <div class="listing-title" x-text="listing.title"></div>
+              <div class="listing-price">
+                <span class="price-main" x-text="formatPrice(listing.price)"></span>
+                <span class="price-deviation"
+                      x-show="listing.price_deviation_pct"
+                      :class="listing.price_deviation_pct < 0 ? 'below-market' : 'above-market'"
+                      x-text="formatDeviation(listing.price_deviation_pct)">
+                </span>
+              </div>
+              <div class="listing-meta">
+                <span x-text="listing.year || '—'"></span>
+                <span class="sep">•</span>
+                <span x-text="formatKm(listing.mileage)"></span>
+                <span class="sep">•</span>
+                <span x-text="listing.city || '—'"></span>
+              </div>
+              <div class="listing-margin" x-show="listing.potential_margin">
+                💵 <strong x-text="formatPrice(listing.potential_margin)"></strong>
+                (<span x-text="listing.potential_margin_pct?.toFixed(0) + '%'"></span>)
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination" x-show="pagination.pages > 1">
+        <button @click="goToPage(pagination.page - 1)" :disabled="pagination.page === 1">‹</button>
+        <template x-for="p in paginationPages()" :key="p">
+          <button @click="goToPage(p)" :class="{active: p === pagination.page}" x-text="p"></button>
+        </template>
+        <button @click="goToPage(pagination.page + 1)" :disabled="pagination.page === pagination.pages">›</button>
+      </div>
+
+      <div class="empty-state" x-show="listings.length === 0 && !loading">
+        <div class="empty-icon">📭</div>
+        <p>Aucune annonce ne correspond à vos filtres.</p>
+      </div>
+    </section>
+
+    <!-- ══════════════ SAUVEGARDÉES ══════════════ -->
+    <section x-show="currentTab === 'saved'">
+      <div class="page-header">
+        <h1>Annonces sauvegardées</h1>
+      </div>
+      <div class="listings-grid">
+        <template x-for="listing in savedListings" :key="listing.id">
+          <div class="listing-card" @click="openListing(listing)">
+            <div class="listing-img-wrap">
+              <img :src="listing.thumbnail_url || '/static/no-image.svg'" :alt="listing.title"
+                   onerror="this.src='/static/no-image.svg'" />
+              <div class="score-badge" :class="scoreClass(listing.opportunity_score)">
+                <span x-text="listing.opportunity_score"></span>
+              </div>
+              <button class="save-btn saved" @click.stop="toggleSave(listing)">★</button>
+            </div>
+            <div class="listing-body">
+              <div class="listing-title" x-text="listing.title"></div>
+              <div class="listing-price">
+                <span class="price-main" x-text="formatPrice(listing.price)"></span>
+              </div>
+              <div class="listing-meta">
+                <span x-text="listing.year || '—'"></span> •
+                <span x-text="formatKm(listing.mileage)"></span> •
+                <span x-text="listing.city || '—'"></span>
+              </div>
+              <div class="listing-note" x-show="listing.user_note">
+                📝 <em x-text="listing.user_note"></em>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+      <div class="empty-state" x-show="savedListings.length === 0">
+        <div class="empty-icon">⭐</div>
+        <p>Aucune annonce sauvegardée pour l'instant.</p>
+        <p class="hint">Cliquez sur ☆ pour sauvegarder une annonce.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ══════════════ MODAL DÉTAIL ══════════════ -->
+  <div class="modal-overlay" x-show="selectedListing" @click.self="selectedListing = null"
+       x-transition:enter="modal-enter" x-transition:leave="modal-leave">
+    <div class="modal" x-show="selectedListing">
+      <button class="modal-close" @click="selectedListing = null">✕</button>
+      <template x-if="selectedListing">
+        <div>
+          <!-- En-tête modal -->
+          <div class="modal-header">
+            <div class="modal-score-big" :class="scoreClass(selectedListing.opportunity_score)">
+              <span x-text="selectedListing.opportunity_score"></span>
+              <small>/100</small>
+            </div>
+            <div>
+              <h2 x-text="selectedListing.title"></h2>
+              <div class="modal-price">
+                <span class="price-main" x-text="formatPrice(selectedListing.price)"></span>
+                <span class="price-deviation"
+                      :class="selectedListing.price_deviation_pct < 0 ? 'below-market' : 'above-market'"
+                      x-show="selectedListing.price_deviation_pct"
+                      x-text="formatDeviation(selectedListing.price_deviation_pct)">
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Infos véhicule -->
+          <div class="modal-grid">
+            <div class="modal-section">
+              <h3>Caractéristiques</h3>
+              <table class="info-table">
+                <tr><td>Marque</td><td x-text="selectedListing.brand || '—'"></td></tr>
+                <tr><td>Modèle</td><td x-text="selectedListing.model || '—'"></td></tr>
+                <tr><td>Année</td><td x-text="selectedListing.year || '—'"></td></tr>
+                <tr><td>Kilométrage</td><td x-text="formatKm(selectedListing.mileage)"></td></tr>
+                <tr><td>Carburant</td><td x-text="selectedListing.fuel_type || '—'"></td></tr>
+                <tr><td>Boîte</td><td x-text="selectedListing.transmission || '—'"></td></tr>
+                <tr><td>Couleur</td><td x-text="selectedListing.color || '—'"></td></tr>
+                <tr><td>Propriétaires</td><td x-text="selectedListing.owners_count ?? '—'"></td></tr>
+                <tr><td>CT valide</td><td x-text="selectedListing.technical_control ? '✓ Oui' : '—'"></td></tr>
+                <tr><td>1ère main</td><td x-text="selectedListing.first_hand ? '✓ Oui' : '—'"></td></tr>
+              </table>
+            </div>
+
+            <div class="modal-section">
+              <h3>Analyse financière</h3>
+              <table class="info-table">
+                <tr>
+                  <td>Prix affiché</td>
+                  <td><strong x-text="formatPrice(selectedListing.price)"></strong></td>
+                </tr>
+                <tr>
+                  <td>Moyenne marché</td>
+                  <td x-text="formatPrice(selectedListing.market_avg_price) || '—'"></td>
+                </tr>
+                <tr>
+                  <td>Écart marché</td>
+                  <td :class="selectedListing.price_deviation_pct < 0 ? 'text-green' : 'text-red'"
+                      x-text="selectedListing.price_deviation_pct ? selectedListing.price_deviation_pct.toFixed(1) + '%' : '—'"></td>
+                </tr>
+                <tr>
+                  <td>Prix revente est.</td>
+                  <td x-text="formatPrice(selectedListing.estimated_resale_price) || '—'"></td>
+                </tr>
+                <tr>
+                  <td>Marge potentielle</td>
+                  <td class="text-green">
+                    <strong x-text="formatPrice(selectedListing.potential_margin)"></strong>
+                    (<span x-text="selectedListing.potential_margin_pct?.toFixed(0) + '%'"></span>)
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Détail scores -->
+              <h3 style="margin-top:15px">Détail du score</h3>
+              <div class="score-bars" x-show="selectedListing.score_details">
+                <div class="score-bar-row">
+                  <span>Prix vs marché</span>
+                  <div class="bar"><div :style="'width:' + (selectedListing.score_details?.price_score / 0.4) + '%'"></div></div>
+                  <span x-text="selectedListing.score_details?.price_score + '/40'"></span>
+                </div>
+                <div class="score-bar-row">
+                  <span>Urgence vendeur</span>
+                  <div class="bar"><div :style="'width:' + (selectedListing.score_details?.urgency_score / 0.2) + '%'"></div></div>
+                  <span x-text="selectedListing.score_details?.urgency_score + '/20'"></span>
+                </div>
+                <div class="score-bar-row">
+                  <span>Qualité annonce</span>
+                  <div class="bar"><div :style="'width:' + (selectedListing.score_details?.quality_score / 0.2) + '%'"></div></div>
+                  <span x-text="selectedListing.score_details?.quality_score + '/20'"></span>
+                </div>
+                <div class="score-bar-row">
+                  <span>Fraîcheur</span>
+                  <div class="bar"><div :style="'width:' + (selectedListing.score_details?.recency_score / 0.1) + '%'"></div></div>
+                  <span x-text="selectedListing.score_details?.recency_score + '/10'"></span>
+                </div>
+                <div class="score-bar-row">
+                  <span>Km/Âge</span>
+                  <div class="bar"><div :style="'width:' + (selectedListing.score_details?.mileage_score / 0.1) + '%'"></div></div>
+                  <span x-text="selectedListing.score_details?.mileage_score + '/10'"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Localisation & vendeur -->
+          <div class="modal-section">
+            <h3>Localisation & Vendeur</h3>
+            <p>
+              📍 <span x-text="[selectedListing.city, selectedListing.department, selectedListing.postal_code].filter(Boolean).join(' ')"></span>
+              &nbsp;|&nbsp; Vendeur : <span x-text="selectedListing.seller_type === 'pro' ? '🏪 Pro' : '👤 Particulier'"></span>
+              <span x-show="selectedListing.seller_name"> — <span x-text="selectedListing.seller_name"></span></span>
+            </p>
+          </div>
+
+          <!-- Description -->
+          <div class="modal-section" x-show="selectedListing.description">
+            <h3>Description</h3>
+            <p class="description-text" x-text="selectedListing.description"></p>
+          </div>
+
+          <!-- Note utilisateur -->
+          <div class="modal-section">
+            <h3>Ma note</h3>
+            <textarea class="user-note-input" x-model="selectedListing.user_note"
+                      placeholder="Ajouter une note personnelle..."
+                      @blur="saveNote(selectedListing)"></textarea>
+          </div>
+
+          <!-- Actions -->
+          <div class="modal-actions">
+            <button class="btn-primary" @click="window.open(selectedListing.url, '_blank')">
+              🔗 Voir sur Leboncoin
+            </button>
+            <button class="btn-secondary" @click="toggleSave(selectedListing)">
+              <span x-text="selectedListing.is_saved ? '★ Sauvegardée' : '☆ Sauvegarder'"></span>
+            </button>
+            <button class="btn-secondary" @click="markContacted(selectedListing)"
+                    :class="{active: selectedListing.is_contacted}">
+              <span x-text="selectedListing.is_contacted ? '✓ Contacté' : '📞 Marquer contacté'"></span>
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div class="toast-container">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div class="toast" :class="toast.type" x-text="toast.message"
+           x-transition:enter="toast-enter" x-transition:leave="toast-leave"></div>
+    </template>
+  </div>
+
+  <!-- Alpine.js -->
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

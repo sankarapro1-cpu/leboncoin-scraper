@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    container_name: autodeal
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data        # Persistance base de données SQLite
+      - ./.env:/app/.env:ro     # Configuration
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Option PostgreSQL (décommentez pour utiliser à la place de SQLite)
+  # db:
+  #   image: postgres:16-alpine
+  #   container_name: autodeal-db
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: autodeal
+  #     POSTGRES_USER: autodeal
+  #     POSTGRES_PASSWORD: changeme
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+# volumes:
+#   postgres_data:
